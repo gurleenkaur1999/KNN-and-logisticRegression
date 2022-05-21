@@ -1,0 +1,212 @@
+---
+title: "TitanicTrain"
+author: "Gurleen Kaur"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#reading the file
+titanic_train1 <- read.csv("train.csv",stringsAsFactors = TRUE,
+                           na.strings = ""
+                           #for replacing the strings 0r numbers with NA
+                           )
+
+```
+
+```{r}
+#removing insignificant variables
+Final_titanic_train <- titanic_train1[,c(-1,-4,-9,-11)]
+Final_titanic_train$Survived<- as.factor(Final_titanic_train$Survived)
+```
+
+```{r}
+#very less people survived and large number of people died
+table(Final_titanic_train$Survived)
+```
+
+```{r}
+#There were more numbers of males than females
+table(Final_titanic_train$Sex)
+```
+
+```{r}
+#approximately normal distribution of age
+hist(Final_titanic_train$Age)
+```
+
+```{r}
+#177 values are there which are missing in the titanic dataset in age column
+sum(is.na(Final_titanic_train$Age))
+```
+
+```{r}
+#large outliers in fare
+#check it if it need transformation
+hist(Final_titanic_train$Fare)
+```
+
+```{r}
+#2 NAs in embarked
+sum(is.na(Final_titanic_train$Embarked))
+library(tidyverse)
+ggplot(data = Final_titanic_train,mapping = aes(x=Embarked))+
+  geom_bar()
+```
+
+
+```{r}
+library(psych)
+pairs.panels(Final_titanic_train[,c(-1,-2,-3,-8)])
+```
+
+```{r}
+# two factor variables sex and embarkment
+str(Final_titanic_train)
+```
+
+```{r}
+#on analysis of histogram of variables, Fare has skewed distribution
+library(Hmisc)
+hist.data.frame(Final_titanic_train)
+```
+
+```{r}
+#different scales
+boxplot(Final_titanic_train)
+```
+
+
+```{r}
+sum(is.na(Final_titanic_train))
+```
+
+
+```{r}
+library(recipes)
+Preprocess_titanic_train <- recipe(Survived~.,data = Final_titanic_train)%>%
+                             step_nzv(all_predictors())%>%
+                             step_medianimpute(c("Age","Fare"))%>%
+                            step_modeimpute("Embarked")%>%
+                           step_dummy(c("Embarked","Sex"),one_hot=FALSE)%>%
+                          step_center(all_predictors())%>%
+                         step_scale(all_predictors())
+Preprocess_titanic_train
+```
+
+
+```{r}
+prep_titanic <- prep(Preprocess_titanic_train)
+prep_titanic
+```
+
+```{r}
+bake_titanic_train <- bake(prep_titanic,new_data = Final_titanic_train)
+summary(bake_titanic_train)
+hist.data.frame(bake_titanic_train)
+```
+
+# K nearest Neighbor
+```{r}
+set.seed(1234)
+library(caret)
+Choosing_K <- train(Survived~.,data=bake_titanic_train,method="knn",tuneLength=20,
+                    trControl=trainControl(method="repeatedcv",
+                                           number=10,repeats=10))
+Choosing_K
+```
+
+#predicting using test data
+```{r}
+titanic_test <- read.csv("test.csv",stringsAsFactors = TRUE,
+                         na.strings = "")
+```
+
+```{r}
+Final_titanic_test <- titanic_test[,c(-1,-3,-8,-10)]
+```
+
+```{r}
+bake_Titanic_Test <- bake(prep_titanic,new_data = Final_titanic_test)
+summary(bake_Titanic_Test)
+```
+
+```{r}
+Predicted_Survived <- predict(Choosing_K,bake_Titanic_Test)
+```
+
+```{r}
+bake_Titanic_Test <- Titanic_test%>%
+                   mutate(Predicted_Survived)
+Titanic_Test <- select(bake_Titanic_Test,"PassengerId","Predicted_Survived")
+```
+
+```{r}
+#creating a csv file
+write.csv(Titanic_Test,file="TITANIC TEST")
+```
+
+
+#logistic model
+
+```{r}
+library(recipes)
+Preprocess_train <- recipe(Survived~.,data = Final_titanic_train)%>%
+                             step_nzv(all_predictors())%>%
+                             step_medianimpute(c("Age","Fare"))%>%
+                            step_modeimpute("Embarked")%>%
+                           step_dummy(c("Embarked","Sex"),one_hot=FALSE)
+```
+
+```{r}
+prep_train<- prep(Preprocess_train)
+prep_train
+```
+
+```{r}
+bake_train <- bake(prep_train,new_data = Final_titanic_train)
+
+```
+
+```{r}
+options(scipen = 10000)
+logistic_model <- glm(Survived~.,data = bake_train,
+                      family = "binomial")
+summary(logistic_model)
+```
+
+```{r}
+options(scipen = 10000)
+logistic_model_2<- glm(Survived~Pclass+Age+SibSp+Sex_male,data = bake_train,
+                      family = "binomial")
+summary(logistic_model_2)
+```
+
+```{r}
+head(predict(logistic_model_2,bake_train,type = "response"))
+head(bake_train$Survived)
+```
+
+#prediciting on test data
+
+```{r}
+bake_Test <- bake(prep_train,new_data = Final_titanic_test)
+
+```
+
+
+```{r}
+Predict <- predict(logistic_model_2,newdata = bake_Test,type = "response")
+predicting_survived <- ifelse(Predict>0.5,1,0)
+bake_Test <- mutate(bake_Test,predicting_survived)
+```
+
+
+```{r}
+write.csv(bake_Test,"titanicsubmissionlog")
+```
+
